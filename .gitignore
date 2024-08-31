@@ -2,3 +2,7 @@
 /data
 /plots
 /__pycache__
+/.env
+/.csv
+/.h5
+/models

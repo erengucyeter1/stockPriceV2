@@ -16,7 +16,7 @@ class WindowGenerator:
         val_df,
         test_df,
         all_df,
-        batc_size=32,
+        batch_size=32,
         label_columns=None,
     ):
 
@@ -26,7 +26,7 @@ class WindowGenerator:
         self.test_df = test_df
         self.all_df = all_df
 
-        self.batc_size = batc_size
+        self.batch_size = batch_size
 
         # Work out the label column indices.
         self.label_columns = label_columns
@@ -87,9 +87,9 @@ class WindowGenerator:
                 f"Label width: {self.label_width}",
                 f"Total window size: {self.total_window_size}",
                 f"Shift: {self.shift}",
-                f"Input indices: {self.input_indices}",
-                f"Label indices: {self.label_indices}",
+                f"Batch size: {self.batch_size}",
                 f"Label column name(s): {self.label_columns}",
+                f"All column names: {self.test_df.columns.tolist()}",
             ]
         )
 
@@ -143,9 +143,8 @@ class WindowGenerator:
         max_subplots=3,
     ):
 
-        #
-        print(self.test)
-        #
+        plt.clf()
+        plt.cla()
         inputs, labels = self.example
 
         plt.figure(figsize=(12, 8))
@@ -215,6 +214,8 @@ class WindowGenerator:
         plot_col="Close",
         max_subplots=1,
     ):
+        plt.clf()
+        plt.cla()
         inputs, labels = self.example_last_window
 
         plt.figure(figsize=(12, 8))
@@ -279,7 +280,7 @@ class WindowGenerator:
             sequence_length=self.total_window_size,
             sequence_stride=1,
             shuffle=Shuffle,
-            batch_size=self.batc_size,  # 32
+            batch_size=self.batch_size,  # 32
         )
 
         ds = ds.map(self.split_window)
@@ -304,7 +305,8 @@ class WindowGenerator:
     def plot_test_labels(
         self, model, model_folder_path, scaler=None, model_name=None, date_term=None
     ):
-
+        plt.clf()
+        plt.cla()
         my_iter = iter(self.test)
 
         all_pred = None
@@ -332,26 +334,12 @@ class WindowGenerator:
 
         # plot
         if scaler is not None:
-            min_value = scaler.data_min_[3]  # Tahmin edilen sütun
-            max_value = scaler.data_max_[3]  # Tahmin edilen sütun
+            min_value = scaler.data_min_[3]
+            max_value = scaler.data_max_[3]
 
-            # Tahmin edilen değerleri orijinal boyutlarına döndürün
+            # Tahmin edilen değerleri orijinal boyutlarına döndür
             predictions_original = all_pred * (max_value - min_value) + min_value
             labels_original = all_labels * (max_value - min_value) + min_value
-
-            pred_go_up = np.where(
-                predictions_original[1:] > predictions_original[:-1], 1, 0
-            )
-            labels_go_up = np.where(labels_original[1:] > labels_original[:-1], 1, 0)
-
-            # Doğru tahminlerin sayısını hesaplama
-            same_count = tf.reduce_sum(
-                tf.cast(tf.equal(labels_go_up, pred_go_up), tf.float32)
-            )
-
-            print(f"Accuracy: {same_count/len(labels_go_up)}")
-            rmse = np.sqrt(np.mean(((all_pred - all_labels) ** 2)))
-            print(f"RMSE: {rmse}")
 
         plt.figure(figsize=(12, 8))
         plt.title = f"{model_name} - {date_term}"
@@ -413,6 +401,9 @@ class WindowGenerator:
         return accuracy, rmse
 
     def plot_all_data(self, model, model_name, date_term, model_folder_path):
+
+        plt.clf()
+        plt.cla()
 
         my_iter = iter(self.all)
 

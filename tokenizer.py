@@ -32,7 +32,7 @@ class MyTokenizer:
 
     def merge_data(self):
         ticker_data = self.fm.raw
-        news_data = self.fm.news_average_score
+        news_data = self.fm.news_total_score  # or news_average_score
 
         merged_data = pd.merge(ticker_data, news_data, on="Date", how="outer")
 
@@ -82,4 +82,4 @@ if __name__ == "__main__":
 
     tokenizer = MyTokenizer("MSFT")
 
-    tokenizer.merge_fred_data()
+    tokenizer.merge_data()

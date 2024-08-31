@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from data_manager import FileManager
 import pickle as pkl
 import os
+from datetime import datetime
 
 
 def plot_performance(
@@ -15,10 +16,13 @@ def plot_performance(
     val_performance,
     performance,
     path,
-    metric_name="mean_absolute_error",
+    metric_name="binary_accuracy",  # mean_absolute_error
 ):
     plt.clf()
     plt.cla()
+
+    for v in performance.values():
+        print(v)
 
     x = np.arange(len(performance))
     width = 0.3
@@ -37,17 +41,7 @@ def plot_performance(
     plt.savefig(f"{path}plots/{metric_name}_performance.png")
 
 
-def log_model_info(
-    model: tf.keras.Model,
-    model_name: str,
-    start_date: str,
-    end_date: str,
-    window: WindowGenerator,
-    scaler: MinMaxScaler,
-    main_model_folder_path: str = "models/",
-) -> None:
-
-    data_start_year = start_date.split("-")[0]
+def get_model_folder_path(main_model_folder_path: str = "models/"):
     model_count = 0
     model_folder_path = f"{main_model_folder_path}model_{model_count+1}/"
 
@@ -60,6 +54,23 @@ def log_model_info(
         if not os.path.exists(model_folder_path):
             os.makedirs(model_folder_path)
 
+    return model_folder_path
+
+
+def log_model_info(
+    model: tf.keras.Model,
+    model_name: str,
+    start_date: str,
+    end_date: str,
+    window: WindowGenerator,
+    scaler: MinMaxScaler,
+    model_folder_path,
+) -> None:
+
+    data_start_year = start_date.split("-")[0]
+
+    model_folder_path = model_folder_path
+
     model.save(f"{model_folder_path}{model_name}.h5")
 
     val_performance[model_name] = model.evaluate(window.val, return_dict=True)
@@ -67,10 +78,7 @@ def log_model_info(
 
     pkl.dump(val_performance, open(f"{model_folder_path}/val_performance.pkl", "wb"))
     pkl.dump(performance, open(f"{model_folder_path}/performance.pkl", "wb"))
-
-    plot_performance(
-        model_name, data_start_year, val_performance, performance, model_folder_path
-    ),
+    pkl.dump(scaler, open(f"{model_folder_path}/scaler.pkl", "wb"))
 
     window.plot(
         model=model,
@@ -89,28 +97,40 @@ def log_model_info(
         gru_model, "GRU", data_start_year, model_folder_path=model_folder_path
     )
 
+    plot_performance(
+        model_name,
+        data_start_year,
+        val_performance,
+        performance,
+        model_folder_path,
+        metric_name="binary_accuracy",
+    ),
+
     model_info = open(f"{model_folder_path}model_info.txt", "a")
     model.summary(print_fn=lambda x: model_info.write(x + "\n"))
+    model_info.write("\n\n")
     model_info.write(f"Model Name: {model_name}\n")
     model_info.write(f"Train data start Date: {start_date}\n")
     model_info.write(f"Train data end Date: {end_date}\n")
     model_info.write(f"Window Generator: {window}\n")
+    model_info.write("\n\n")
+    model_info.write("Model Hyperparameters:\n")
+    model_info.write(f"Learning Rate: {model.optimizer.learning_rate.numpy()}\n")
+    model_info.write(f"Batch Size: {window.batch_size}\n")
+    model_info.write("\n\n")
+    model_info.write(f"Validation Performance: {val_performance[model_name]}\n")
+    model_info.write(f"Test Performance: {performance[model_name]}\n")
     model_info.write("\n\n")
     model_info.close()
 
 
 fm = FileManager("MSFT")
 
-data = fm.processed_with_news_and_fred.iloc[770:]
+curr_folder_path = get_model_folder_path()
+
+data = fm.processed_with_news_and_fred
 
 start_date = data["Date"].iloc[0]
-
-# Calculate moving averages for fred data columns
-fred_columns = data.columns[-7:]
-window_size = 5
-
-for column in fred_columns:
-    data[column + "_MA"] = data[column].rolling(window=window_size).mean()
 
 
 # drop rows with NaN values
@@ -141,7 +161,7 @@ long_train_df = long_term_df[0 : int(long_n * 0.7)]
 long_val_df = long_term_df[int(long_n * 0.7) : int(long_n * 0.9)]
 long_test_df = long_term_df[int(long_n * 0.9) :]
 
-end_date = long_train_df.index[-1].spit(" ")[0]
+end_date = long_train_df.index[-1].strftime("%Y-%m-%d")
 # create window generator
 
 
@@ -153,20 +173,20 @@ long_term_wide_window = WindowGenerator(
     val_df=long_val_df,
     test_df=long_test_df,
     all_df=long_term_df,
-    batc_size=32,
+    batch_size=32,
     label_columns=["Close"],
 )
 
 
-# define compile and fit function
-import keras
+long_term_wide_window.plot()
+input("işlem tamam")
 
 
-def scheduler(epoch, lr):
-    if epoch < 18:
+"""def scheduler(epoch, lr):
+    if epoch < 5:
         return lr
     else:
-        return lr * 1.1  # Öğrenme hızını %5 artır
+        return lr * 1.5  # Öğrenme hızını %5 artır
 
 
 lr_scheduler = keras.callbacks.LearningRateScheduler(scheduler)
@@ -175,12 +195,18 @@ lr_scheduler = keras.callbacks.LearningRateScheduler(scheduler)
 reduce_lr = keras.callbacks.ReduceLROnPlateau(
     monitor="val_loss", factor=0.1, patience=2, min_lr=0.00001
 )
-
+"""
 early_stopping = tf.keras.callbacks.EarlyStopping(
-    monitor="val_loss", patience=3, mode="min", restore_best_weights=True
+    monitor="val_loss", patience=10, mode="min", restore_best_weights=True
 )
 
-callbacks = [early_stopping, reduce_lr, lr_scheduler]
+log_path = f"{curr_folder_path}logs/fit/{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+
+tensorboard_callback = tf.keras.callbacks.TensorBoard(
+    log_dir=log_path, histogram_freq=1
+)
+
+callbacks = [early_stopping, tensorboard_callback]  #
 
 
 def compile_and_fit(
@@ -189,9 +215,9 @@ def compile_and_fit(
 ):
 
     model.compile(
-        loss=tf.losses.MeanSquaredError(),
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
-        metrics=[tf.metrics.MeanAbsoluteError()],
+        loss=tf.losses.BinaryCrossentropy(),
+        optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.0001),  # RMSprop
+        metrics=[tf.metrics.BinaryAccuracy()],  # tf.metrics.BinaryAccuracy()
     )
 
     history = model.fit(
@@ -225,16 +251,15 @@ else:
     gru_model = tf.keras.models.Sequential(
         [
             tf.keras.layers.GRU(512, return_sequences=True),
-            tf.keras.layers.GRU(512, return_sequences=True),
-            tf.keras.layers.GRU(512, return_sequences=True),
-            tf.keras.layers.Dense(128),
-            tf.keras.layers.Dense(1),
+            tf.keras.layers.Dropout(0.1),
+            tf.keras.layers.TimeDistributed(
+                tf.keras.layers.Dense(units=1, activation="sigmoid")
+            ),
         ]
     )
 
 
 # long term
-
 
 with tf.device("/GPU:0"):
     long_term_history = compile_and_fit(gru_model, long_term_wide_window)
@@ -247,4 +272,5 @@ log_model_info(
     end_date,
     long_term_wide_window,
     long_term_scaler,
+    curr_folder_path,
 )
